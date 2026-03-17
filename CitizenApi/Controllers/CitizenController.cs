@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using System.Net.Http.Json;
 using CitizenApi.Models;
+using CitizenApi.Services;
 
 namespace CitizenApi.Controllers;
 
@@ -8,29 +8,28 @@ namespace CitizenApi.Controllers;
 [Route("api/[controller]")]
 public class CitizenController : ControllerBase
 {
-    private static List<Citizen> citizens = new List<Citizen>();
-
-    private readonly IHttpClientFactory httpClientFactory;
-    private readonly IConfiguration configuration;
-
+    private readonly ExternalObjectService externalObjectService;
+    private readonly CitizenCsvService citizenCsvService;
 
     public CitizenController(
-        IHttpClientFactory httpClientFactory,
-        IConfiguration configuration)
+        ExternalObjectService externalObjectService,
+        CitizenCsvService citizenCsvService)
     {
-        this.httpClientFactory = httpClientFactory;
-        this.configuration = configuration;
+        this.externalObjectService = externalObjectService;
+        this.citizenCsvService = citizenCsvService;
     }
 
     [HttpGet]
     public ActionResult<List<Citizen>> GetAll()
     {
+        var citizens = citizenCsvService.ReadCitizens();
         return Ok(citizens);
     }
 
     [HttpGet("{ci}")]
     public ActionResult<Citizen> GetByCi(string ci)
     {
+        var citizens = citizenCsvService.ReadCitizens();
         var citizenFound = citizens.FirstOrDefault(c => c.CI == ci);
 
         if (citizenFound == null)
@@ -44,6 +43,8 @@ public class CitizenController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<Citizen>> Create([FromBody] CreateCitizenRequest request)
     {
+        var citizens = citizenCsvService.ReadCitizens();
+
         if (string.IsNullOrWhiteSpace(request.FirstName) ||
             string.IsNullOrWhiteSpace(request.LastName) ||
             string.IsNullOrWhiteSpace(request.CI))
@@ -71,8 +72,7 @@ public class CitizenController : ControllerBase
         };
 
         Random random = new Random();
-
-        string personalAsset = await GetRandomPersonalAsset();
+        string personalAsset = await externalObjectService.GetRandomPersonalAssetAsync();
 
         Citizen newCitizen = new Citizen
         {
@@ -84,7 +84,7 @@ public class CitizenController : ControllerBase
         };
 
         citizens.Add(newCitizen);
-
+        citizenCsvService.SaveCitizens(citizens);
 
         return CreatedAtAction(nameof(GetByCi), new { ci = newCitizen.CI }, newCitizen);
     }
@@ -92,6 +92,7 @@ public class CitizenController : ControllerBase
     [HttpPut("{ci}")]
     public ActionResult<Citizen> Update(string ci, [FromBody] UpdateCitizenRequest request)
     {
+        var citizens = citizenCsvService.ReadCitizens();
         var citizenFound = citizens.FirstOrDefault(c => c.CI == ci);
 
         if (citizenFound == null)
@@ -108,12 +109,15 @@ public class CitizenController : ControllerBase
         citizenFound.FirstName = request.FirstName;
         citizenFound.LastName = request.LastName;
 
+        citizenCsvService.SaveCitizens(citizens);
+
         return Ok(citizenFound);
     }
 
     [HttpDelete("{ci}")]
     public IActionResult Delete(string ci)
     {
+        var citizens = citizenCsvService.ReadCitizens();
         var citizenFound = citizens.FirstOrDefault(c => c.CI == ci);
 
         if (citizenFound == null)
@@ -122,39 +126,8 @@ public class CitizenController : ControllerBase
         }
 
         citizens.Remove(citizenFound);
+        citizenCsvService.SaveCitizens(citizens);
 
         return Ok("Citizen deleted");
-    }
-
-    private async Task<string> GetRandomPersonalAsset()
-    {
-        try
-        {
-            string url = configuration["ExternalApi:ObjectsUrl"] ?? "";
-
-            var client = httpClientFactory.CreateClient();
-
-
-            var objects = await client.GetFromJsonAsync<List<ExternalObject>>(url);
-
-            if (objects == null || objects.Count == 0)
-            {
-                return "Unknown asset";
-            }
-
-            Random random = new Random();
-            var selectedObject = objects[random.Next(objects.Count)];
-
-            if (string.IsNullOrWhiteSpace(selectedObject.Name))
-            {
-                return "Unknown asset";
-            }
-
-            return selectedObject.Name;
-        }
-        catch
-        {
-            return "Unknown asset";
-        }
     }
 }
