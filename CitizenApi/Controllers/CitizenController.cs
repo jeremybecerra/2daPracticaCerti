@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using System.Net.Http.Json;
 using CitizenApi.Models;
 
 namespace CitizenApi.Controllers;
@@ -8,6 +9,18 @@ namespace CitizenApi.Controllers;
 public class CitizenController : ControllerBase
 {
     private static List<Citizen> citizens = new List<Citizen>();
+
+    private readonly IHttpClientFactory httpClientFactory;
+    private readonly IConfiguration configuration;
+
+
+    public CitizenController(
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration)
+    {
+        this.httpClientFactory = httpClientFactory;
+        this.configuration = configuration;
+    }
 
     [HttpGet]
     public ActionResult<List<Citizen>> GetAll()
@@ -29,7 +42,7 @@ public class CitizenController : ControllerBase
     }
 
     [HttpPost]
-    public ActionResult<Citizen> Create([FromBody] CreateCitizenRequest request)
+    public async Task<ActionResult<Citizen>> Create([FromBody] CreateCitizenRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.FirstName) ||
             string.IsNullOrWhiteSpace(request.LastName) ||
@@ -59,16 +72,19 @@ public class CitizenController : ControllerBase
 
         Random random = new Random();
 
+        string personalAsset = await GetRandomPersonalAsset();
+
         Citizen newCitizen = new Citizen
         {
             FirstName = request.FirstName,
             LastName = request.LastName,
             CI = request.CI,
             BloodGroup = bloodGroups[random.Next(bloodGroups.Length)],
-            PersonalAsset = "Temporary asset"
+            PersonalAsset = personalAsset
         };
 
         citizens.Add(newCitizen);
+
 
         return CreatedAtAction(nameof(GetByCi), new { ci = newCitizen.CI }, newCitizen);
     }
@@ -108,5 +124,37 @@ public class CitizenController : ControllerBase
         citizens.Remove(citizenFound);
 
         return Ok("Citizen deleted");
+    }
+
+    private async Task<string> GetRandomPersonalAsset()
+    {
+        try
+        {
+            string url = configuration["ExternalApi:ObjectsUrl"] ?? "";
+
+            var client = httpClientFactory.CreateClient();
+
+
+            var objects = await client.GetFromJsonAsync<List<ExternalObject>>(url);
+
+            if (objects == null || objects.Count == 0)
+            {
+                return "Unknown asset";
+            }
+
+            Random random = new Random();
+            var selectedObject = objects[random.Next(objects.Count)];
+
+            if (string.IsNullOrWhiteSpace(selectedObject.Name))
+            {
+                return "Unknown asset";
+            }
+
+            return selectedObject.Name;
+        }
+        catch
+        {
+            return "Unknown asset";
+        }
     }
 }
