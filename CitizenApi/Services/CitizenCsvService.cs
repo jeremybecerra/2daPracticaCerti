@@ -5,72 +5,93 @@ namespace CitizenApi.Services;
 public class CitizenCsvService
 {
     private readonly IConfiguration configuration;
+    private readonly ILogger<CitizenCsvService> logger;
 
-    public CitizenCsvService(IConfiguration configuration)
+    public CitizenCsvService(IConfiguration configuration, ILogger<CitizenCsvService> logger)
     {
         this.configuration = configuration;
+        this.logger = logger;
     }
 
     public List<Citizen> ReadCitizens()
     {
-        string filePath = GetCsvFilePath();
-        string[] lines = File.ReadAllLines(filePath);
-
-        List<Citizen> citizens = new List<Citizen>();
-
-        foreach (string line in lines)
+        try
         {
-            if (string.IsNullOrWhiteSpace(line))
+            string filePath = GetCsvFilePath();
+            string[] lines = File.ReadAllLines(filePath);
+
+            List<Citizen> citizens = new List<Citizen>();
+
+            foreach (string line in lines)
             {
-                continue;
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                string[] values = line.Split(',');
+
+                if (values.Length < 5)
+                {
+                    continue;
+                }
+
+                Citizen citizen = new Citizen
+                {
+                    FirstName = values[0],
+                    LastName = values[1],
+                    CI = values[2],
+                    BloodGroup = values[3],
+                    PersonalAsset = values[4]
+                };
+
+                citizens.Add(citizen);
             }
 
-            string[] values = line.Split(',');
+            logger.LogInformation("Read {Count} citizens from CSV", citizens.Count);
 
-            if (values.Length < 5)
-            {
-                continue;
-            }
-
-            Citizen citizen = new Citizen
-            {
-                FirstName = values[0],
-                LastName = values[1],
-                CI = values[2],
-                BloodGroup = values[3],
-                PersonalAsset = values[4]
-            };
-
-            citizens.Add(citizen);
+            return citizens;
         }
-
-        return citizens;
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error reading citizens CSV");
+            throw new Exception("Error reading citizens file.");
+        }
     }
 
     public void SaveCitizens(List<Citizen> citizens)
     {
-        string filePath = GetCsvFilePath();
-        List<string> lines = new List<string>();
-
-        foreach (Citizen citizen in citizens)
+        try
         {
-            string line = string.Join(",",
-                CleanValue(citizen.FirstName),
-                CleanValue(citizen.LastName),
-                CleanValue(citizen.CI),
-                CleanValue(citizen.BloodGroup),
-                CleanValue(citizen.PersonalAsset));
+            string filePath = GetCsvFilePath();
+            List<string> lines = new List<string>();
 
-            lines.Add(line);
+            foreach (Citizen citizen in citizens)
+            {
+                string line = string.Join(",",
+                    CleanValue(citizen.FirstName),
+                    CleanValue(citizen.LastName),
+                    CleanValue(citizen.CI),
+                    CleanValue(citizen.BloodGroup),
+                    CleanValue(citizen.PersonalAsset));
+
+                lines.Add(line);
+            }
+
+            File.WriteAllLines(filePath, lines);
+
+            logger.LogInformation("Saved {Count} citizens to CSV", citizens.Count);
         }
-
-        File.WriteAllLines(filePath, lines);
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error writing citizens CSV");
+            throw new Exception("Error writing citizens file.");
+        }
     }
 
     private string GetCsvFilePath()
     {
-        string relativePath = configuration["CsvSettings:FilePath"] ?? "DataFiles/citizens.csv";
-        string fullPath = Path.Combine(Directory.GetCurrentDirectory(), relativePath);
+        string fullPath = configuration["Data:Location"] ?? "C:\\TEMP\\2daPracticaCerti\\CitizenApi\\DataFiles\\citizens.csv";
 
         string? folderPath = Path.GetDirectoryName(fullPath);
 
@@ -82,6 +103,7 @@ public class CitizenCsvService
         if (!File.Exists(fullPath))
         {
             File.Create(fullPath).Dispose();
+            logger.LogInformation("CSV file created at {Path}", fullPath);
         }
 
         return fullPath;
